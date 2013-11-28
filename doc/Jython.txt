@@ -1,0 +1,25 @@
+Jython works, although a number of changes were required to make it
+work, and some limitations still exist.
+
+* Jython 2.5 has the old Python 2.5 syntax for try/except handling, so
+  is not supported. Jython 2.7 is still in beta, but seems to work
+  fine.
+
+* Jython does not have the __builtins__ symbol, so the __builtin__
+  module has to be imported. Sadly Python 3 does not have the
+  __builtin__ module, so a bit of a hack is required to get this to
+  work.
+
+* Jython does not support the multiprocessing module. The claim is
+  that since Jython uses Java for multitasking - and therefore has no
+  GIL - multiprocessing is not necessary. It was easy to add thread
+  support back in, since the APIs are almost identical. A limitation is 
+  that the number of cores cannot be returned programatically any more.
+
+* A few minor differences, such as not having the O_NOATIME symbol or
+  supporting fcntl().
+
+* Performance is pretty darn slow. I can't imagine using the Jython
+  version unless for some reason a Java interpreter was available but
+  it was impossible to install CPython.
+

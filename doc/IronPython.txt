@@ -1,0 +1,32 @@
+While it would be good if the fileinfo program ran on as many
+implementations of Python as possible, IronPython in it's current form
+is not supported.
+
+1. For some reason hashlib.sha224() is not supported. Of course, we
+   could change easily the hash version to hashlib.sha256() if
+   necessary.
+
+2. IronPython provides a very different view of a file's metadata with
+   os.lstat() than other implementations:
+
+   * inode values are always 0, making inode caching (or checking)
+     impossible
+   * nlink, uid, and gid are also always 0, making checking impossible
+   * ctime and mtime are always equal to the mtime of the file
+   * resolution of times is in whole seconds (this can be worked
+     around, of course)
+
+3. Most importantly, unicode support differs from that of other Python
+   implementations. This seems to be due to the underlying C# Char
+   value only representing 16-bits, and C# String values being a
+   collection of Char. This makes both filenames and checksum
+   generation of far-east character sets (like Chinese or Japanese)
+   impossible. This appears to be a fundamental problem with
+   IronPython unicode handling, with no easy workarounds possible.
+
+Note that IronPython has only been evaluated under Mono, so the
+limitations may not exist for the Microsoft CLI implementation - or
+they may simply be different. However given the Unix-oriented nature
+of this program probably it would be best to simply re-implement
+fileinfo for Windows.
+
