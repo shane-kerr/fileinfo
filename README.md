@@ -91,7 +91,7 @@ is not optimal in all cases, but is straightforward and very
 effective. This technique is not used for the hash, nor for any of the
 fields below.
 
-There are a few missing fields:
+There are a few missing fields in the example:
 
     M - time of last modification
     r - device ID
@@ -114,9 +114,9 @@ contained (in Python 2.x all non-ASCII characters are considered
 unprintable since there is no function to determine which characters
 are printable). The escaping rules are:
 
-    * Non-printable 8-bit characters (and backslash) are escaped as \xXX
-    * Non-printable 16-bit characters are escaped as \uXXXX
-    * Non-printable 32-bit characters are escaped as \UXXXXXXXX
+* Non-printable 8-bit characters (and backslash) are escaped as \xXX
+* Non-printable 16-bit characters are escaped as \uXXXX
+* Non-printable 32-bit characters are escaped as \UXXXXXXXX
 
 Hash values are only calculated for regular files. Also, if there is
 an error calculating the hash value for a file (for example if the
@@ -144,12 +144,12 @@ Python Version Compatiability
 ----
 fileinfo.py has been tested with:
 
-    * Python 2.6
-    * Python 2.7
-    * Python 3.2
-    * Python 3.3
-    * PyPy 2.0
-    * Jython 2.7beta1
+* Python 2.6
+* Python 2.7
+* Python 3.2
+* Python 3.3
+* PyPy 2.0
+* Jython 2.7beta1
 
 Jython is not recommended, due to the limitations described in
 doc/Jython.txt.

@@ -59,7 +59,7 @@ is not optimal in all cases, but is straightforward and very
 effective. This technique is not used for the hash, nor for any of the
 fields below.
 
-There are a few missing fields:
+There are a few missing fields in the example:
 
     M - time of last modification
     r - device ID
@@ -524,10 +524,11 @@ class cached_info:
         return self.stat
 
 class file_info:
-    """file_info is the main class that contains metadata about files and
-    outputs information about them. The initalizer and a couple of support
-    functions to set values. The output() function has the main logic
-    which implements the efficient metadata output for the program."""
+    """file_info is the main class that contains metadata about files
+    and outputs information about them. The initalizer and a couple of
+    support functions set values. The output() function has the main
+    logic which implements the efficient metadata output for the
+    program."""
     def __init__(self, file_name, full_path, stat):
         """initialize the file information
 
