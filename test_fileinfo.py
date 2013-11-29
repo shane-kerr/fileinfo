@@ -1,6 +1,7 @@
 import fileinfo
 import errno
 import os
+import os.path
 import platform
 # Python 2 needs to use the StringIO module to have a file-like object
 # that you can write strings to and results in a string; in Python 3 we need to
@@ -250,6 +251,20 @@ class InfoTests(unittest.TestCase):
         self.assertEqual(stat_val, prev_stat)
         self.assertEqual(out.getvalue(), "i42\n>foo\n")
         self.assertEqual(err.getvalue(), "")
+
+    def test_file_info(self):
+        # check our initializer
+        file_name = '.'
+        full_path = os.path.normpath(os.path.join(os.getcwd(), file_name))
+        stat = os.lstat(full_path)
+        info = fileinfo.file_info(file_name, full_path, stat)
+
+        self.assertEqual(file_name, info.file_name)
+        self.assertEqual(full_path, info.full_path)
+        self.assertIs(stat, info.stat)
+        self.assertIsNone(info.encoded_hash)
+        self.assertIsNone(info.hashing_error)
+        
 
 if __name__ == '__main__':
     unittest.main()
