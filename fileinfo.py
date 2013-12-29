@@ -205,12 +205,12 @@ except ImportError:
 # TODO: system-level tests (lettuce?)
 # TODO: man page
 # TODO: checker program
+#       should compare file names in each directory to make sure none added
 # TODO: localization?
 # TODO: paths relative vs. absolute?
 # XXX: file info for non-directories... (on command line)
 # TODO: update progress when large files being processed
-# TODO: output inodes to care about first (0.4 file format) to aid checker
-# TODO: Additional code to shorten time (Am... maybe also for 0.4)
+# TODO: Additional code to shorten time (Am... maybe for 0.4)
 # XXX: stat() value change between lstat() and open()
 # TODO: recover from errors in multiprocessing units, for example:
 #    Traceback (most recent call last):
@@ -232,6 +232,8 @@ except ImportError:
 # TODO: errors with lstat() calls
 # TODO: output user name as well as number?
 # TODO: auto-determine number of cores to run
+# TODO: checksum for file itself, maybe also byte & file counts for 
+#       contents & file?
 
 # The file information meta-file has a version identifier, which will
 # aid when checking meta-file from older versions, that is to say 
@@ -544,10 +546,26 @@ class file_info:
         self.encoded_hash = None
         self.hashing_error = None
     def set_hash(self, encoded_hash):
+        """set the hash for the file
+
+        :param encoded_hash: a base64 encoded hash value to be output"""
         self.encoded_hash = encoded_hash
     def set_hashing_error(self, exception):
+        """set the hashing error
+
+        :param exception: exception causing hashing error """
         self.hashing_error = exception
     def output(self, out, err, prev_stat):
+        """output information about the file
+
+        :param out: a file-like object for normal output
+        :param err: a file-like object for errors (NOT USED)
+        :param prev_stat: the last stat object output
+
+        This function outputs information about the file. It is heavily 
+        dependent on the previous file information output, since in 
+        order to minimize the data output repeated metadata is omitted.
+        """
         if self.hashing_error:
             if hasattr(self.hashing_error, 'errno') and \
                hasattr(self.hashing_error, 'strerror'):
@@ -599,7 +617,6 @@ class file_info:
 
         # these values are rarely used, so don't bother to minimize them,
         # rather simply don't output them at all if they are 0
-        # XXX: does this make sense?
         if getattr(self.stat, "st_rdev", 0):
             out.write("r%d\n" % self.stat.st_rdev)
         if getattr(self.stat, "st_flags", 0):

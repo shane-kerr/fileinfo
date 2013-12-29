@@ -264,7 +264,120 @@ class InfoTests(unittest.TestCase):
         self.assertIs(stat, info.stat)
         self.assertIsNone(info.encoded_hash)
         self.assertIsNone(info.hashing_error)
-        
+        # check hash setting
+        info.set_hash("fubar")
+        self.assertEqual(info.encoded_hash, "fubar")
+        # check hash error setting
+        info.set_hashing_error("baz")
+        self.assertEqual(info.hashing_error, "baz")
+
+    class mock_stat:
+        def __init__(self):
+            self.st_mode = 0o640
+            self.st_ino = 1234
+            self.st_nlink = 1
+            self.st_uid = 0
+            self.st_gid = 0
+            self.st_size = 0
+            self.st_atime = 0
+            self.st_atime_ns = 0
+            self.st_ctime = 0
+            self.st_ctime_ns = 0
+            self.st_mtime = 0
+            self.st_mtime_ns = 0
+            self.st_rdev = 0
+            self.st_flags = 0
+
+    def test_file_info_output(self):
+        # try hashing error with a bogus value
+        file_name = '.'
+        full_path = os.path.normpath(os.path.join(os.getcwd(), file_name))
+        stat = os.lstat(full_path)
+        info = fileinfo.file_info(file_name, full_path, stat)
+        info.set_hashing_error("bogus")
+        out = StringIO()
+        err = StringIO()
+        next_stat = info.output(out, err, None)
+        self.assertEqual(next_stat, info.stat)
+        self.assertEqual(err.getvalue(), "Error with '.': bogus\n")
+        # try hashing error with an actual exception
+        file_name = '.'
+        full_path = os.path.normpath(os.path.join(os.getcwd(), file_name))
+        stat = os.lstat(full_path)
+        info = fileinfo.file_info(file_name, full_path, stat)
+        try:
+            open("/nosuchfile", "r")
+        except Exception as e:
+            hashing_error = e
+        info.set_hashing_error(hashing_error)
+        out = StringIO()
+        err = StringIO()
+        next_stat = info.output(out, err, None)
+        self.assertEqual(next_stat, info.stat)
+        self.assertEqual(err.getvalue(),
+                         "Error with '.': [ENOENT] No such file or directory\n")
+        # okay, now lets check our non-error output with None prev_stat
+        file_name = '.'
+        full_path = os.path.normpath(os.path.join(os.getcwd(), file_name))
+        stat = self.mock_stat()
+        info = fileinfo.file_info(file_name, full_path, stat)
+        out = StringIO()
+        err = StringIO()
+        next_stat = info.output(out, err, None)
+        self.assertEqual(next_stat, info.stat)
+        self.assertEqual(out.getvalue(),
+          "m640\ni1234\nn1\nu0\ng0\ns0\nC19700101000000\nA19700101000000\n>.\n")
+        # prev_stat, with all attributes different from prev_stat
+        # (this will force a full output of all values)
+        file_name = '.'
+        full_path = os.path.normpath(os.path.join(os.getcwd(), file_name))
+        stat = self.mock_stat()
+        info = fileinfo.file_info(file_name, full_path, stat)
+        out = StringIO()
+        err = StringIO()
+        prev_stat = self.mock_stat()
+        prev_stat.st_mode = stat.st_mode + 1
+        prev_stat.st_ino = stat.st_ino + 1
+        prev_stat.st_nlink = stat.st_nlink + 1
+        prev_stat.st_uid = stat.st_uid + 1
+        prev_stat.st_gid = stat.st_gid + 1
+        prev_stat.st_size = stat.st_size + 1
+        prev_stat.st_atime_ns =  stat.st_atime_ns + 1
+        prev_stat.st_ctime_ns =  stat.st_ctime_ns + 1
+        prev_stat.st_mtime_ns =  stat.st_mtime_ns + 1
+        next_stat = info.output(out, err, prev_stat)
+        self.assertEqual(next_stat, info.stat)
+        self.assertEqual(out.getvalue(),
+          "m640\ni1234\nn1\nu0\ng0\ns0\nC19700101000000\nA19700101000000\n>.\n")
+        # prev_stat, with all attributes identical to prev_stat
+        # (this will force a minimal output of values)
+        file_name = '.'
+        full_path = os.path.normpath(os.path.join(os.getcwd(), file_name))
+        stat = self.mock_stat()
+        info = fileinfo.file_info(file_name, full_path, stat)
+        out = StringIO()
+        err = StringIO()
+        prev_stat = self.mock_stat()
+        next_stat = info.output(out, err, prev_stat)
+        self.assertEqual(next_stat, info.stat)
+        self.assertEqual(out.getvalue(),
+          ">.\n")
+        # okay, now run and get mtime, rdev, flags, and hash
+        file_name = '.'
+        full_path = os.path.normpath(os.path.join(os.getcwd(), file_name))
+        stat = self.mock_stat()
+        info = fileinfo.file_info(file_name, full_path, stat)
+        out = StringIO()
+        err = StringIO()
+        prev_stat = self.mock_stat()
+        stat.st_mtime_ns = stat.st_ctime_ns + 1
+        stat.st_rdev = 1
+        stat.st_flags = 2
+        info.set_hash("a hash")
+        next_stat = info.output(out, err, prev_stat)
+        self.assertEqual(next_stat, info.stat)
+        self.assertEqual(out.getvalue(),
+          "M19700101000000.000000001\nr1\nf2\n#a hash\n>.\n")
 
 if __name__ == '__main__':
     unittest.main()
