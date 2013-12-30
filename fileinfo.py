@@ -232,7 +232,7 @@ except ImportError:
 # TODO: errors with lstat() calls
 # TODO: output user name as well as number?
 # TODO: auto-determine number of cores to run
-# TODO: checksum for file itself, maybe also byte & file counts for 
+# TODO: checksum for file itself, maybe also byte & file counts for
 #       contents & file?
 
 # The file information meta-file has a version identifier, which will
@@ -562,8 +562,8 @@ class file_info:
         :param err: a file-like object for errors (NOT USED)
         :param prev_stat: the last stat object output
 
-        This function outputs information about the file. It is heavily 
-        dependent on the previous file information output, since in 
+        This function outputs information about the file. It is heavily
+        dependent on the previous file information output, since in
         order to minimize the data output repeated metadata is omitted.
         """
         if self.hashing_error:
@@ -631,6 +631,25 @@ class file_info:
         return self.stat
 
 def serializer(q_serializer, num_checksum, outfile):
+    """insure results from all threads/processes get output in the correct order
+
+    :param q_serializer: a Queue (Queue.Queue for threads,
+                         multiprocessing.Queue for multiple processes)
+    :param num_checksum: the total number of checksum tasks running (at least 1)
+    :param outfile: the file to write output to
+
+    Collects info objects from the serializer queue, and outputs them
+    to the file using their output() methods.
+
+    It uses a hash to store out-of-order results until the proper item
+    arrives.
+
+    It knows that each checksum generator is done because it receives
+    None over the q_serializer. When it has received enough, then the
+    serializer itself shuts down.
+    """
+    assert(num_checksum >= 1)
+
     finished_checksum_count = 0
     next_number = 0
     result_buffer = { }

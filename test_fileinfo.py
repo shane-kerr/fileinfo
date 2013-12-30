@@ -12,6 +12,10 @@ except ImportError:
     from io import StringIO
 import tempfile
 import unittest
+try:
+    import Queue
+except ImportError:
+    import queue as Queue
 
 mock_ioctl_exception = None
 def mock_ioctl(fd, opt, arg, mutate_flag=False):
@@ -378,6 +382,68 @@ class InfoTests(unittest.TestCase):
         self.assertEqual(next_stat, info.stat)
         self.assertEqual(out.getvalue(),
           "M19700101000000.000000001\nr1\nf2\n#a hash\n>.\n")
+
+# test the serializer and checksum tasks
+class TaskTests(unittest.TestCase):
+    class mock_info:
+        def __init__(self, message):
+            self.message = message
+        def output(self, out, err, prev_stat):
+            out.write(self.message + "\n")
+            return prev_stat
+
+    def test_serializer(self):
+        # test a serializer with no entries sent
+        q = Queue.Queue()
+        q.put(None)
+        out = StringIO()
+        fileinfo.serializer(q, 1, out)
+        self.assertEqual(out.getvalue(), '')
+        # try a single entry
+        q = Queue.Queue()
+        q.put((0, self.mock_info("single")))
+        q.put(None)
+        out = StringIO()
+        fileinfo.serializer(q, 1, out)
+        self.assertEqual(out.getvalue(), 'single\n')
+        # now try several entries
+        q = Queue.Queue()
+        q.put((0, self.mock_info("a")))
+        q.put((1, self.mock_info("b")))
+        q.put((2, self.mock_info("c")))
+        q.put((3, self.mock_info("d")))
+        q.put((4, self.mock_info("e")))
+        q.put(None)
+        out = StringIO()
+        fileinfo.serializer(q, 1, out)
+        self.assertEqual(out.getvalue(), 'a\nb\nc\nd\ne\n')
+        # now try several entries, out of order
+        q = Queue.Queue()
+        q.put((0, self.mock_info("a")))
+        q.put((4, self.mock_info("e")))
+        q.put((2, self.mock_info("c")))
+        q.put((3, self.mock_info("d")))
+        q.put((1, self.mock_info("b")))
+        q.put(None)
+        out = StringIO()
+        fileinfo.serializer(q, 1, out)
+        self.assertEqual(out.getvalue(), 'a\nb\nc\nd\ne\n')
+        # finally, simulate our complete system by having multiple generators
+        q = Queue.Queue()
+        q.put((0, self.mock_info("a")))
+        q.put((4, self.mock_info("e")))
+        q.put((2, self.mock_info("c")))
+        q.put((3, self.mock_info("d")))
+        q.put((1, self.mock_info("b")))
+        q.put(None)
+        q.put(None)
+        q.put(None)
+        q.put(None)
+        out = StringIO()
+        fileinfo.serializer(q, 4, out)
+        self.assertEqual(out.getvalue(), 'a\nb\nc\nd\ne\n')
+
+# check mixed ordering
 
 if __name__ == '__main__':
     unittest.main()
