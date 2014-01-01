@@ -16,6 +16,7 @@ try:
     import Queue
 except ImportError:
     import queue as Queue
+import base64
 
 mock_ioctl_exception = None
 def mock_ioctl(fd, opt, arg, mutate_flag=False):
@@ -383,6 +384,14 @@ class InfoTests(unittest.TestCase):
         self.assertEqual(out.getvalue(),
           "M19700101000000.000000001\nr1\nf2\n#a hash\n>.\n")
 
+# simulate a failure of O_NOATIME by creating EPERM when opening a file
+org_os_open = None
+def mock_os_open(fname, flags):
+    noatime = getattr(os, 'O_NOATIME', 0)
+    if (flags & noatime) != 0:
+        raise OSError(errno.EPERM, "Permission denied: '%s'" % fname)
+    return org_os_open(fname, flags)
+
 # test the serializer and checksum tasks
 class TaskTests(unittest.TestCase):
     class mock_info:
@@ -443,7 +452,51 @@ class TaskTests(unittest.TestCase):
         fileinfo.serializer(q, 4, out)
         self.assertEqual(out.getvalue(), 'a\nb\nc\nd\ne\n')
 
-# check mixed ordering
+    def test_get_checksum(self):
+        # confirm that our checksum works
+        temp_file = tempfile.NamedTemporaryFile()
+        temp_file.write(b"some data\n")
+        temp_file.flush()
+        file_name = os.path.basename(temp_file.name)
+        full_path = temp_file.name
+        stat = os.lstat(full_path)
+        info = fileinfo.file_info(file_name, full_path, stat)
+        self.assertIsNone(info.encoded_hash)
+        result = fileinfo.get_checksum(info)
+        self.assertEqual(result, info)
+        hash_val = base64.b64decode(info.encoded_hash)
+        self.assertEqual(len(hash_val), 28)
+        self.assertIsNone(info.hashing_error)
+        # check with an open error (no permission to open file)
+        old_mode = stat.st_mode
+        os.chmod(temp_file.name, 0)
+        stat = os.lstat(full_path)
+        info = fileinfo.file_info(file_name, full_path, stat)
+        self.assertIsNone(info.encoded_hash)
+        result = fileinfo.get_checksum(info)
+        os.chmod(temp_file.name, old_mode)
+        self.assertEqual(result, info)
+        self.assertIsNone(info.encoded_hash)
+        self.assertEqual(info.hashing_error.errno, errno.EACCES)
+
+        # test our hack to detect O_NOATIME file-system errors
+        global org_os_open
+        file_name = '/etc/passwd'
+        full_path = os.path.normpath(os.path.join(os.getcwd(), file_name))
+        stat = os.lstat(full_path)
+        info = fileinfo.file_info(file_name, full_path, stat)
+        self.assertIsNone(info.encoded_hash)
+
+        org_os_open = fileinfo.os.open
+        fileinfo.os.open = mock_os_open
+        result = fileinfo.get_checksum(info)
+        fileinfo.os.open = org_os_open
+
+        self.assertEqual(result, info)
+        hash_val = base64.b64decode(info.encoded_hash)
+        self.assertEqual(len(hash_val), 28)
+        self.assertIsNone(info.hashing_error)
+        # TODO: verify actual value...
 
 if __name__ == '__main__':
     unittest.main()

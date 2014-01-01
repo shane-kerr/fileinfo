@@ -638,6 +638,8 @@ def serializer(q_serializer, num_checksum, outfile):
     :param num_checksum: the total number of checksum tasks running (at least 1)
     :param outfile: the file to write output to
 
+    This is expected to be run as a thread / multiprocess.
+
     Collects info objects from the serializer queue, and outputs them
     to the file using their output() methods.
 
@@ -687,11 +689,20 @@ def serializer(q_serializer, num_checksum, outfile):
     outfile.flush()
 
 def get_checksum(chksum_file):
+    """calculate a SHA224 hash as a checksum for the given file_info object
+
+    :param chksum_file: a file_info object
+
+    The file named by the file_info object is opened, read, and a
+    SHA224 hash generated for the file contents. The result is stored
+    in the object, and the ojbect itself is returned.
+    """
     try:
         h = hashlib.sha224()
         # open with O_NOATIME so calculating checksum doesn't
         # modify the file metadata
         try:
+            # use getattr() because O_NOATIME is Linux-specific
             noatime = getattr(os, 'O_NOATIME', 0)
             fd = os.open(chksum_file.full_path, os.O_RDONLY | noatime)
         except OSError as e:
