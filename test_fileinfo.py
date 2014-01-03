@@ -498,5 +498,35 @@ class TaskTests(unittest.TestCase):
         self.assertIsNone(info.hashing_error)
         # TODO: verify actual value...
 
+    def test_checksum_generator(self):
+        # test a checksum generator that gets no input
+        q_in = Queue.Queue()
+        q_in.put(None)
+        q_out = Queue.Queue()
+        fileinfo.checksum_generator(q_in, q_out)
+        self.assertIsNone(q_out.get_nowait())
+        self.assertTrue(q_out.empty())
+        # test a checksum generator that gets some files
+        q_in = Queue.Queue()
+        temp_file1 = tempfile.NamedTemporaryFile()
+        file_name = os.path.basename(temp_file1.name)
+        full_path = temp_file1.name
+        stat = os.lstat(full_path)
+        info1 = fileinfo.file_info(file_name, full_path, stat)
+        q_in.put((0, info1))
+        temp_file2 = tempfile.NamedTemporaryFile()
+        file_name = os.path.basename(temp_file2.name)
+        full_path = temp_file2.name
+        stat = os.lstat(full_path)
+        info2 = fileinfo.file_info(file_name, full_path, stat)
+        q_in.put((1, info2))
+        q_in.put(None)
+        q_out = Queue.Queue()
+        fileinfo.checksum_generator(q_in, q_out)
+        self.assertEqual((0, info1), q_out.get_nowait())
+        self.assertEqual((1, info2), q_out.get_nowait())
+        self.assertIsNone(q_out.get_nowait())
+        self.assertTrue(q_out.empty())
+
 if __name__ == '__main__':
     unittest.main()

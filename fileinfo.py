@@ -640,8 +640,9 @@ def serializer(q_serializer, num_checksum, outfile):
 
     This is expected to be run as a thread / multiprocess.
 
-    Collects info objects from the serializer queue, and outputs them
-    to the file using their output() methods.
+    Collects info objects from the q_serializer queue, and outputs
+    them to the file using their output() methods. Each info object
+    arrives in a tuple of (order, info_file).
 
     It uses a hash to store out-of-order results until the proper item
     arrives.
@@ -723,6 +724,18 @@ def get_checksum(chksum_file):
     return chksum_file
             
 def checksum_generator(q_in, q_out):
+    """generate checksums for files
+
+    :param q_in: a Queue (Queue.Queue for threads,
+                          multiprocessing.Queue for multiple processes)
+    :param q_out: a Queue (Queue.Queue for threads,
+                           multiprocessing.Queue for multiple processes)
+
+    Collects info objects from the q_in queue, calculates the checksum
+    for them, and sends them to the q_out queue. Each info object
+    arrives and is sent in a tuple of (order, info_file) (although this
+    function sends the order value, it does not otherwise use it).
+    """
     while True:
         info = q_in.get()
         if info is None:
