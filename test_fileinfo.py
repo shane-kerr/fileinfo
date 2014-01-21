@@ -266,9 +266,9 @@ class InfoTests(unittest.TestCase):
 
         self.assertEqual(file_name, info.file_name)
         self.assertEqual(full_path, info.full_path)
-        self.assertIs(stat, info.stat)
-        self.assertIsNone(info.encoded_hash)
-        self.assertIsNone(info.hashing_error)
+        self.assertTrue(isinstance(info.stat, type(stat)))
+        self.assertEqual(info.encoded_hash, None)
+        self.assertEqual(info.hashing_error, None)
         # check hash setting
         info.set_hash("fubar")
         self.assertEqual(info.encoded_hash, "fubar")
@@ -461,22 +461,22 @@ class TaskTests(unittest.TestCase):
         full_path = temp_file.name
         stat = os.lstat(full_path)
         info = fileinfo.file_info(file_name, full_path, stat)
-        self.assertIsNone(info.encoded_hash)
+        self.assertEqual(info.encoded_hash, None)
         result = fileinfo.get_checksum(info)
         self.assertEqual(result, info)
-        hash_val = base64.b64decode(info.encoded_hash)
+        hash_val = base64.b64decode(info.encoded_hash.encode())
         self.assertEqual(len(hash_val), 28)
-        self.assertIsNone(info.hashing_error)
+        self.assertEqual(info.hashing_error, None)
         # check with an open error (no permission to open file)
         old_mode = stat.st_mode
         os.chmod(temp_file.name, 0)
         stat = os.lstat(full_path)
         info = fileinfo.file_info(file_name, full_path, stat)
-        self.assertIsNone(info.encoded_hash)
+        self.assertEqual(info.encoded_hash, None)
         result = fileinfo.get_checksum(info)
         os.chmod(temp_file.name, old_mode)
         self.assertEqual(result, info)
-        self.assertIsNone(info.encoded_hash)
+        self.assertEqual(info.encoded_hash, None)
         self.assertEqual(info.hashing_error.errno, errno.EACCES)
 
         # test our hack to detect O_NOATIME file-system errors
@@ -485,7 +485,7 @@ class TaskTests(unittest.TestCase):
         full_path = os.path.normpath(os.path.join(os.getcwd(), file_name))
         stat = os.lstat(full_path)
         info = fileinfo.file_info(file_name, full_path, stat)
-        self.assertIsNone(info.encoded_hash)
+        self.assertEqual(info.encoded_hash, None)
 
         org_os_open = fileinfo.os.open
         fileinfo.os.open = mock_os_open
@@ -493,9 +493,9 @@ class TaskTests(unittest.TestCase):
         fileinfo.os.open = org_os_open
 
         self.assertEqual(result, info)
-        hash_val = base64.b64decode(info.encoded_hash)
+        hash_val = base64.b64decode(info.encoded_hash.encode())
         self.assertEqual(len(hash_val), 28)
-        self.assertIsNone(info.hashing_error)
+        self.assertEqual(info.hashing_error, None)
         # TODO: verify actual value...
 
     def test_checksum_generator(self):
@@ -504,7 +504,7 @@ class TaskTests(unittest.TestCase):
         q_in.put(None)
         q_out = Queue.Queue()
         fileinfo.checksum_generator(q_in, q_out)
-        self.assertIsNone(q_out.get_nowait())
+        self.assertEqual(q_out.get_nowait(), None)
         self.assertTrue(q_out.empty())
         # test a checksum generator that gets some files
         q_in = Queue.Queue()
@@ -525,7 +525,7 @@ class TaskTests(unittest.TestCase):
         fileinfo.checksum_generator(q_in, q_out)
         self.assertEqual((0, info1), q_out.get_nowait())
         self.assertEqual((1, info2), q_out.get_nowait())
-        self.assertIsNone(q_out.get_nowait())
+        self.assertEqual(q_out.get_nowait(), None)
         self.assertTrue(q_out.empty())
 
 if __name__ == '__main__':
