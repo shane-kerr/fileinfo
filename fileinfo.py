@@ -234,6 +234,8 @@ except ImportError:
 # TODO: auto-determine number of cores to run
 # TODO: checksum for file itself, maybe also byte & file counts for
 #       contents & file?
+# TODO: extended attributes
+# TODO: skip output for empty directories
 
 # The file information meta-file has a version identifier, which will
 # aid when checking meta-file from older versions, that is to say 
@@ -744,44 +746,98 @@ def checksum_generator(q_in, q_out):
         (number, chksum_file) = info
         q_out.put((number, get_checksum(chksum_file)))
 
-def output_file_info(dir_name, file_name, outfile, inode_cache,
-                     number, q_checksum, q_serializer,
-                     ncpus, prev_stat):
-    full_path = os.path.normpath(os.path.join(dir_name, file_name))
-    this_stat = os.lstat(full_path)
-
-    # Output the meta-data of the file, as returned by lstat().
-    # 
-    # We omit st_dev, st_blocks, and st_blksize as these are determined
-    # by the file system, and are not really useful for our purposes.
-
-    if this_stat.st_ino in inode_cache:
-        # if we have previously seen this inode, the rest of the 
-        # meta-data has already been output, so all we need to record
-        # is the inode number
-        info = cached_info(file_name, this_stat)
-        if ncpus > 1:
-            q_serializer.put((number, info))
+class file_info_output_stream_base(object):
+    def __init__(self, outfile):
+        self.outfile = outfile
+        self.inode_cache = { }
+        self.prev_stat = None
+    def _process_dir(self, chdir_obj):
+        pass
+    def _process_inode(self, inode_obj):
+        pass
+    def _process_checksum_file(self, file_obj):
+        pass
+    def _process_non_checksum_file(self, file_obj):
+        pass
+    def output_dir(self, dir_name):
+        self._process_dir(chdir_info(dir_name))
+    def output_file(self, dir_name, file_name):
+        full_path = os.path.normpath(os.path.join(dir_name, file_name))
+        this_stat = os.lstat(full_path)
+        if this_stat.st_ino in self.inode_cache:
+            # if we have previously seen this inode, the rest of the
+            # meta-data has already been output, so all we need to record
+            # is the inode number
+            self._process_inode(cached_info(file_name, this_stat))
         else:
-            info.output(outfile, sys.stderr, prev_stat)
-    else:
-        info = file_info(file_name, full_path, this_stat)
-        if ncpus > 1:
+            info = file_info(file_name, full_path, this_stat)
             if stat.S_ISREG(this_stat.st_mode):
                 # for regular files, we will calculate a hash of the file
-                q_checksum.put((number, info))
+                self._process_checksum_file(info)
             else:
-                # otherwise we just want to output the meta-data
-                q_serializer.put((number, info))
-        else:
-            if stat.S_ISREG(this_stat.st_mode):
-                # for regular files, we will calculate a hash of the file
-                info = get_checksum(info)
-            info.output(outfile, sys.stderr, prev_stat)
-            
-        # record the fact that we have seen this inode
-        inode_cache[this_stat.st_ino] = True
-    return this_stat
+                # otherwise, we output without a hash
+                self._process_non_checksum_file(info)
+            # record the fact that we have seen this inode
+            self.inode_cache[this_stat.st_ino] = True
+        self.prev_stat = this_stat
+
+class file_info_output_stream_immediate(file_info_output_stream_base):
+    def __init__(self, outfile):
+        super(file_info_output_stream_immediate, self).__init__(outfile)
+    def _process_dir(self, chdir_obj):
+        chdir_obj.output(self.outfile, sys.stderr, self.prev_stat)
+    def _process_inode(self, inode_obj):
+        inode_obj.output(self.outfile, sys.stderr, self.prev_stat)
+    def _process_checksum_file(self, file_obj):
+        get_checksum(file_obj).output(self.outfile, sys.stderr, self.prev_stat)
+    def _process_non_checksum_file(self, file_obj):
+        file_obj.output(self.outfile, sys.stderr, self.prev_stat)
+
+class file_info_output_stream_background(file_info_output_stream_base):
+    def __init__(self, outfile, q_checksum, q_serializer):
+        super(file_info_output_stream_background, self).__init__(outfile)
+        self.q_checksum = q_checksum
+        self.q_serializer = q_serializer
+        self.number = 0
+    def _process_dir(self, chdir_obj):
+        self.q_serializer.put((self.number, chdir_obj))
+        self.number = self.number + 1
+    def _process_inode(self, inode_obj):
+        self.q_serializer.put((self.number, inode_obj))
+        self.number = self.number + 1
+    def _process_checksum_file(self, file_obj):
+        self.q_checksum.put((self.number, file_obj))
+        self.number = self.number + 1
+    def _process_non_checksum_file(self, file_obj):
+        self.q_serializer.put((self.number, file_obj))
+        self.number = self.number + 1
+
+# TODO from old output_file_info() function, reuse docstrings for
+#      refactored code...
+    """output all of the information for the given file
+
+    :param dir_name: directory of the file, as returned by os.walk
+    :param file_name: name of the file, as returned by os.walk
+    :param outfile: file-like object to write to
+    :param inode_cache: dictonary that is used to store which inodes
+                        we have already seen
+    :param number: an integer, which must increase by 1 every file;
+                   this is used in multicore case to insure that file
+                   info is output in the correct order
+    :param q_checksum: a Queue (Queue.Queue for threads,
+                       multiprocessing.Queue for multiple processes)
+                       used to send a request for checksum generation
+                       to another thread/process
+    :param q_serializer: a Queue (Queue.Queue for threads,
+                         multiprocessing.Queue for multiple processes)
+                         used to send a request to print to the
+                         serializer thread/process
+    :param prev_stat: os.lstat() information from the previous file
+                      output
+
+    This function will return before the actual output appears, since
+    the actual output is sent by the serializer thread/process.
+    """
 
 def human_time(seconds):
     sub_seconds = seconds - int(seconds)
@@ -977,37 +1033,34 @@ def main():
         sys.stderr.write("\n")
         progress = progress_output(total_dirs, total_files, 0.1)
 
+    # if we are threading, we use the Queue and threading modules,
+    # otherwise the multiprocessing module
+    if use_threads:
+        my_queue_type = Queue.Queue
+        my_thread_type = threading.Thread
+    else:
+        my_queue_type = multiprocessing.Queue
+        my_thread_type = multiprocessing.Process
+
     # create processing units
     if ncpus == 1:
-        q_checksum = None
-        q_serializer = None
-    elif use_threads:
+        stream = file_info_output_stream_immediate(outfile)
+    else:
         # XXX: how big should this queue be?
-        q_checksum = Queue.Queue(ncpus * 4)
-        q_serializer = Queue.Queue()
-        serializer_task = threading.Thread(target=serializer, 
+        q_checksum = my_queue_type(ncpus * 4)
+        q_serializer = my_queue_type()
+        serializer_task = my_thread_type(target=serializer,
                                            args=(q_serializer, ncpus, outfile))
         serializer_task.start()
         for n in range(ncpus):
-            threading.Thread(target=checksum_generator,
+            my_thread_type(target=checksum_generator,
                                     args=(q_checksum, q_serializer)).start()
-    else:
-        # XXX: how big should this queue be?
-        q_checksum = multiprocessing.Queue(ncpus * 4)
-        q_serializer = multiprocessing.Queue()
-        serializer_task = multiprocessing.Process(target=serializer, 
-                                       args=(q_serializer, ncpus, outfile))
-        serializer_task.start()
-        for n in range(ncpus):
-            multiprocessing.Process(target=checksum_generator,
-                                    args=(q_checksum, q_serializer)).start()
-    prev_stat = None
+        stream = file_info_output_stream_background(outfile,
+                                                    q_checksum, q_serializer)
 
-    inode_cache = { }
     total_dirs = 0
     total_files = 0
     total_bytes_read = 0
-    number = 0
     for fileinfo_dir in fileinfo_dirs:
         # In Python 2, if we invoke os.walk() with a Unicode string
         # we'll get Unicode file names, so we need to insure that 
@@ -1016,13 +1069,9 @@ def main():
         fileinfo_dir = make_type_unicode(fileinfo_dir)
 
         for root, dirs, files in os.walk(fileinfo_dir):
+            # XXX: we can skip output for empty directories
             this_dir = chdir_info(root)
-            if ncpus > 1:
-                q_serializer.put((number, this_dir))
-            else:
-                this_dir.output(outfile, sys.stderr, prev_stat)
-                
-            number = number + 1
+            stream.output_dir(root)
             if args.progress:
                 progress.update(1, 0)
             # do dirs first then files to give us some pipelining...
@@ -1031,18 +1080,12 @@ def main():
             # while the sort completes... hm...
             dirs.sort()
             for name in dirs:
-                prev_stat  = output_file_info(root, name, outfile, inode_cache, 
-                                              number, q_checksum, q_serializer,
-                                              ncpus, prev_stat)
-                number = number + 1
+                stream.output_file(root, name)
                 if args.progress:
                     progress.update(0, 1)
             files.sort()
             for name in files:
-                prev_stat  = output_file_info(root, name, outfile, inode_cache, 
-                                              number, q_checksum, q_serializer,
-                                              ncpus, prev_stat)
-                number = number + 1
+                stream.output_file(root, name)
                 if args.progress:
                     progress.update(0, 1)
             total_dirs = total_dirs + len(dirs)
