@@ -149,6 +149,7 @@ fileinfo.py has been tested with:
 * Python 3.2
 * Python 3.3
 * PyPy 2.0
+* PyPy3 2.1-beta1
 * Jython 2.7beta1
 
 Jython is not recommended, due to the limitations described in
