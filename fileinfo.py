@@ -432,43 +432,42 @@ else:
         """
         return False
     
-"""
-To support multiple cores, we have a number of worker threads handling
-hash generation.
-
-We have three types of thread:
-
-* The main thread finds and stats files
-* Worker threads compute the hash of regular files
-* A serializer thread outputs information in the correct order
-
-We need the serializer thread because directories and files that are
-not regular files (symlinks, FIFOs, and the like) are ready for output
-immediately but other files take time beause the hash needs to be
-calculated. Even if this were not the case, hash generation takes a
-variable amount of time depending on file size. Finally, multicore
-operations are inherently unpredictable since we don't know what else
-is going on with the system. So we collect all information into the
-serializer thread and insure output occurs in a consistent order.
-
-There are 3 types of information that we may want to output:
-
-1. A new directory that we have changed into
-2. A file who's inode we have already seen (so just the inode number)
-3. A file we have not yet output information for
-
-In the last case we want to calculate a hash if it is a normal file.
-
-The resulting algorithm is this:
-
-* main thread: changes to a directory and sends that information
-   to the serializer via a queue
-* main thread: gets a file list
-* main thread: for each file, stat it. if it is a regular file, send 
-   it to a worker thread, otherwise send it to the serializer
-* worker thread: get a file, calculate a hash, send to the serializer
-* serializer: output information in order
-"""
+# To support multiple cores, we have a number of worker threads handling
+# hash generation.
+#
+# We have three types of thread:
+#
+# * The main thread finds and stats files
+# * Worker threads compute the hash of regular files
+# * A serializer thread outputs information in the correct order
+#
+# We need the serializer thread because directories and files that are
+# not regular files (symlinks, FIFOs, and the like) are ready for output
+# immediately but other files take time beause the hash needs to be
+# calculated. Even if this were not the case, hash generation takes a
+# variable amount of time depending on file size. Finally, multicore
+# operations are inherently unpredictable since we don't know what else
+# is going on with the system. So we collect all information into the
+# serializer thread and insure output occurs in a consistent order.
+#
+# There are 3 types of information that we may want to output:
+#
+# 1. A new directory that we have changed into
+# 2. A file who's inode we have already seen (so just the inode number)
+# 3. A file we have not yet output information for
+#
+# In the last case we want to calculate a hash if it is a normal file.
+#
+# The resulting algorithm is this:
+#
+# * main thread: changes to a directory and sends that information
+#   to the serializer via a queue
+# * main thread: gets a file list
+# * main thread: for each file, stat it. if it is a regular file, send
+#   it to a worker thread, otherwise send it to the serializer
+# * worker thread: get a file, calculate a hash, send to the
+#   serializer
+# * serializer: output information in order
 
 class chdir_info:
     """chdir_info is used to signal a new directory for reporting 
@@ -746,22 +745,89 @@ def checksum_generator(q_in, q_out):
         (number, chksum_file) = info
         q_out.put((number, get_checksum(chksum_file)))
 
+# In order to support both single-core and multi-core operation, we
+# use a class which hides the details of file information output.
+#
+# The base class includes the code for outputting a file or directory,
+# as well as some abstract methods which the concrete implemenations
+# need to define. It also includes tracking of previous stat
+# information as well as the inode cache.
+#
+# Then there are two concrete classes:
+#
+# 1. One for single-core, which outputs immediately, including
+#    computing the checksums as necessary.
+# 2. One for multi-core, which outputs in another thread/process,
+#    after computing the checksums in a separate thread/process as
+#    necessary.
+
 class file_info_output_stream_base(object):
+    """file_info_output_stream_base is an abstract class which defines
+    the generic information and processes needed to output file
+    information."""
     def __init__(self, outfile):
+        """initialize the file_info output stream
+
+        :param outfile: a file descriptor to write to
+        """
         self.outfile = outfile
         self.inode_cache = { }
         self.prev_stat = None
     def _process_dir(self, chdir_obj):
+        """method called when we want to output directory information
+
+        This is intended to be an abstract method, overwritten by concrete
+        implementations. The default implementation does nothing.
+
+        :param chdir_obj: directory we want to write information about
+        """
         pass
     def _process_inode(self, inode_obj):
+        """method called when we want to output information about a cached inode
+
+        This is intended to be an abstract method, overwritten by concrete
+        implementations. The default implementation does nothing.
+
+        :param inode_obj: inode number we want to write information about
+        """
         pass
     def _process_checksum_file(self, file_obj):
+        """method called when we want to output information about a
+        normal file (which includes a checksum)
+
+        This is intended to be an abstract method, overwritten by concrete
+        implementations. The default implementation does nothing.
+
+        :param file_obj: file we want to write information about
+        """
         pass
     def _process_non_checksum_file(self, file_obj):
+        """method called when we want to output information about a
+        special file (which does NOT include a checksum)
+
+        This is intended to be an abstract method, overwritten by concrete
+        implementations. The default implementation does nothing.
+
+        :param file_obj: file we want to write information about
+        """
         pass
     def output_dir(self, dir_name):
+        """output the fact that we have changed to another directory
+
+        :param dir_name: the name of the directory that we have changed to
+        """
         self._process_dir(chdir_info(dir_name))
     def output_file(self, dir_name, file_name):
+        """output information about the given file in the given directory
+
+        :param dir_name: the name of the directory the file is in
+        :param file_name: the name of the file
+
+        This will use information about the previous file to give the
+        least information necessary. It will also track inodes, and only
+        output the inode number if we have seen it before. Finally, it
+        makes the determination if we need to calculate a checksum or not.
+        """
         full_path = os.path.normpath(os.path.join(dir_name, file_name))
         this_stat = os.lstat(full_path)
         if this_stat.st_ino in self.inode_cache:
@@ -782,6 +848,8 @@ class file_info_output_stream_base(object):
         self.prev_stat = this_stat
 
 class file_info_output_stream_immediate(file_info_output_stream_base):
+    """file_info_output_stream_immediate is a concrete implementation
+    used by single-core operation."""
     def __init__(self, outfile):
         super(file_info_output_stream_immediate, self).__init__(outfile)
     def _process_dir(self, chdir_obj):
@@ -794,6 +862,8 @@ class file_info_output_stream_immediate(file_info_output_stream_base):
         file_obj.output(self.outfile, sys.stderr, self.prev_stat)
 
 class file_info_output_stream_background(file_info_output_stream_base):
+    """file_info_output_stream_background is a concrete implementation
+    used by multi-core operation."""
     def __init__(self, outfile, q_checksum, q_serializer):
         super(file_info_output_stream_background, self).__init__(outfile)
         self.q_checksum = q_checksum
@@ -1070,7 +1140,6 @@ def main():
 
         for root, dirs, files in os.walk(fileinfo_dir):
             # XXX: we can skip output for empty directories
-            this_dir = chdir_info(root)
             stream.output_dir(root)
             if args.progress:
                 progress.update(1, 0)
