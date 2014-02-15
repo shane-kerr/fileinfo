@@ -849,7 +849,11 @@ class file_info_output_stream_base(object):
 
 class file_info_output_stream_immediate(file_info_output_stream_base):
     """file_info_output_stream_immediate is a concrete implementation
-    used by single-core operation."""
+    used by single-core operation.
+
+    The methods defined simply call the underlying output functions
+    from the objects passed in.
+    """
     def __init__(self, outfile):
         super(file_info_output_stream_immediate, self).__init__(outfile)
     def _process_dir(self, chdir_obj):
@@ -863,7 +867,12 @@ class file_info_output_stream_immediate(file_info_output_stream_base):
 
 class file_info_output_stream_background(file_info_output_stream_base):
     """file_info_output_stream_background is a concrete implementation
-    used by multi-core operation."""
+    used by multi-core operation.
+
+    The methods defined add the objects to the appropriate queue. A
+    sequence number is maintained and used to insure output is made
+    in the proper order.
+    """
     def __init__(self, outfile, q_checksum, q_serializer):
         super(file_info_output_stream_background, self).__init__(outfile)
         self.q_checksum = q_checksum
@@ -881,33 +890,6 @@ class file_info_output_stream_background(file_info_output_stream_base):
     def _process_non_checksum_file(self, file_obj):
         self.q_serializer.put((self.number, file_obj))
         self.number = self.number + 1
-
-# TODO from old output_file_info() function, reuse docstrings for
-#      refactored code...
-    """output all of the information for the given file
-
-    :param dir_name: directory of the file, as returned by os.walk
-    :param file_name: name of the file, as returned by os.walk
-    :param outfile: file-like object to write to
-    :param inode_cache: dictonary that is used to store which inodes
-                        we have already seen
-    :param number: an integer, which must increase by 1 every file;
-                   this is used in multicore case to insure that file
-                   info is output in the correct order
-    :param q_checksum: a Queue (Queue.Queue for threads,
-                       multiprocessing.Queue for multiple processes)
-                       used to send a request for checksum generation
-                       to another thread/process
-    :param q_serializer: a Queue (Queue.Queue for threads,
-                         multiprocessing.Queue for multiple processes)
-                         used to send a request to print to the
-                         serializer thread/process
-    :param prev_stat: os.lstat() information from the previous file
-                      output
-
-    This function will return before the actual output appears, since
-    the actual output is sent by the serializer thread/process.
-    """
 
 def human_time(seconds):
     sub_seconds = seconds - int(seconds)
