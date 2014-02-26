@@ -528,5 +528,35 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(q_out.get_nowait(), None)
         self.assertTrue(q_out.empty())
 
+# test the output stream objects
+class OutputStreamTests(unittest.TestCase):
+    def test_base(self):
+        outfile = StringIO()
+        stream = fileinfo.file_info_output_stream_base(outfile)
+        self.assertEqual(stream.outfile, outfile)
+        self.assertEqual(stream.inode_cache, { })
+        self.assertEqual(stream.prev_stat, None)
+        self.assertEqual(outfile.getvalue(), '')
+    def test_base_noops(self):
+        # confirm that we have operations which don't do anything 
+        outfile = StringIO()
+        stream = fileinfo.file_info_output_stream_base(outfile)
+        stream._process_dir(None)
+        stream._process_inode(None)
+        stream._process_checksum_file(None)
+        stream._process_non_checksum_file(None)
+        self.assertEqual(outfile.getvalue(), '')
+    def test_base_output(self):
+        # confirm that our actual output functions work
+        class testclass(fileinfo.file_info_output_stream_base):
+            def __init__(self):
+                super(fileinof.file_info_output_stream_immediate, 
+                      self).__init__(outfile)
+                self.calls = [ ]
+            def _process_dir(self, chdir_obj):
+                self.calls.append(("_process_dir", chdir_obj))
+            def _process_inode(self, chdir_obj):
+                self.calls.append(("_process_dir", chdir_obj))
+
 if __name__ == '__main__':
     unittest.main()
