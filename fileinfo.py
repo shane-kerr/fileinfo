@@ -236,6 +236,7 @@ except ImportError:
 #       contents & file?
 # TODO: extended attributes
 # TODO: skip output for empty directories
+# TODO: test removing files/directories during a run
 
 # The file information meta-file has a version identifier, which will
 # aid when checking meta-file from older versions, that is to say 

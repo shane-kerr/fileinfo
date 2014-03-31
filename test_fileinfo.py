@@ -550,13 +550,53 @@ class OutputStreamTests(unittest.TestCase):
         # confirm that our actual output functions work
         class testclass(fileinfo.file_info_output_stream_base):
             def __init__(self):
-                super(fileinof.file_info_output_stream_immediate, 
-                      self).__init__(outfile)
+                super(testclass, self).__init__(None)
                 self.calls = [ ]
             def _process_dir(self, chdir_obj):
-                self.calls.append(("_process_dir", chdir_obj))
-            def _process_inode(self, chdir_obj):
-                self.calls.append(("_process_dir", chdir_obj))
+                self.calls.append(("_process_dir", chdir_obj.dir_name))
+            def _process_inode(self, cached_obj):
+                self.calls.append(("_process_inode", cached_obj.file_name))
+            def _process_checksum_file(self, file_obj):
+                self.calls.append(("_process_checksum_file",
+                                   file_obj.file_name, file_obj.full_path))
+            def _process_non_checksum_file(self, file_obj):
+                self.calls.append(("_process_non_checksum_file",
+                                   file_obj.file_name, file_obj.full_path))
+        # set up for a few tests
+        tempdir = tempfile.mkdtemp()
+        special_fname = "i_am_special"
+        special_full_path = tempdir + "/" + special_fname
+        os.mkfifo(special_full_path)
+        normal_fname = "i_am_not_special"
+        normal_full_path = tempdir + "/" + normal_fname
+        open(normal_full_path, "w").close()
+        try:
+            stream = testclass()
+            # confirm we output directories properly
+            stream.calls = []
+            stream.output_dir(tempdir)
+            self.assertEqual(stream.calls, [ ("_process_dir", tempdir), ])
+            # confirm that we output special files properly
+            stream.calls = []
+            stream.output_file(tempdir, special_fname)
+            self.assertEqual(stream.calls, [ ("_process_non_checksum_file",
+                                               special_fname,
+                                               special_full_path), ])
+            # confirm that we output normal files properly
+            stream.calls = []
+            stream.output_file(tempdir, normal_fname)
+            self.assertEqual(stream.calls, [ ("_process_checksum_file",
+                                               normal_fname,
+                                               normal_full_path), ])
+            # confirm that if we output a file twice we use the inode
+            stream.calls = []
+            stream.output_file(tempdir, normal_fname)
+            self.assertEqual(stream.calls, [ ("_process_inode",
+                                               normal_fname), ])
+        finally:
+            os.remove(normal_full_path)
+            os.remove(special_full_path)
+            os.rmdir(tempdir)
 
 if __name__ == '__main__':
     unittest.main()
