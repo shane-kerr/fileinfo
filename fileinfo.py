@@ -691,6 +691,12 @@ def serializer(q_serializer, num_checksum, outfile):
     # we need to explicitly flush before exit due to multiprocessing usage
     outfile.flush()
 
+    # send the size of data if we recorded it
+    if hasattr(outfile, 'size'):
+        q_serializer.put(outfile.size)
+    else:
+        q_serializer.put(-1)
+
 def get_checksum(chksum_file):
     """calculate a SHA224 hash as a checksum for the given file_info object
 
@@ -1151,6 +1157,9 @@ def main():
         for n in range(ncpus):
             q_checksum.put(None)
         serializer_task.join()
+        bytes_written = q_serializer.get()
+    else:
+        bytes_written = outfile.size
 
     if args.progress:
         progress.complete()
@@ -1174,9 +1183,12 @@ def main():
             sys.stderr.write("  Files / second:             -.-\n" % 
                              (total_files / total_run_time))
             
-        # XXX division by 0
-#        sys.stderr.write("Size of output:        %8d (%.1f bytes/file)\n" %
-#                         (outfile.size, outfile.size / total_files))
+        if total_files > 0:
+            sys.stderr.write("Size of output:        %8d (%.1f bytes/file)\n" %
+                             (bytes_written, bytes_written / total_files))
+        else:
+            sys.stderr.write("Size of output:        %8d\n" % bytes_written)
+
 
 if __name__ == "__main__":
     main()
