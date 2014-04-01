@@ -536,8 +536,8 @@ class OutputStreamTests(unittest.TestCase):
         self.assertEqual(stream.outfile.f, outfile)
         self.assertEqual(stream.inode_cache, { })
         self.assertEqual(stream.prev_stat, None)
-        self.assertEqual(outfile.getvalue(),
-                         '%fileinfo ' + fileinfo.FILEINFO_VERSION + '\n')
+        self.assertTrue(outfile.getvalue().startswith(
+                         '%fileinfo ' + fileinfo.FILEINFO_VERSION))
     def test_base_noops(self):
         # confirm that we have operations which don't do anything 
         outfile = StringIO()
@@ -546,8 +546,8 @@ class OutputStreamTests(unittest.TestCase):
         stream._process_inode(None)
         stream._process_checksum_file(None)
         stream._process_non_checksum_file(None)
-        self.assertEqual(outfile.getvalue(),
-                         '%fileinfo ' + fileinfo.FILEINFO_VERSION + '\n')
+        self.assertTrue(outfile.getvalue().startswith(
+                         '%fileinfo ' + fileinfo.FILEINFO_VERSION))
     def test_base_output(self):
         # confirm that our actual output functions work
         class testclass(fileinfo.file_info_output_stream_base):
@@ -568,7 +568,11 @@ class OutputStreamTests(unittest.TestCase):
         tempdir = tempfile.mkdtemp()
         special_fname = "i_am_special"
         special_full_path = tempdir + "/" + special_fname
-        os.mkfifo(special_full_path)
+        try:
+            os.mkfifo(special_full_path)
+        except AttributeError:
+            # Jython has no mkfifo() method... :(
+            os.system("mkfifo '%s'" % special_full_path)
         normal_fname = "i_am_not_special"
         normal_full_path = tempdir + "/" + normal_fname
         open(normal_full_path, "w").close()
