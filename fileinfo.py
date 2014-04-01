@@ -1169,14 +1169,15 @@ def main():
             # XXX: how big should this queue be?
             q_checksum = my_queue_type(ncpus * 4)
             q_serializer = my_queue_type()
-            serializer_task = my_thread_type(target=serializer,
-                                           args=(q_serializer, ncpus, outfile))
-            serializer_task.start()
             for n in range(ncpus):
                 my_thread_type(target=checksum_generator,
                                         args=(q_checksum, q_serializer)).start()
             stream = file_info_output_stream_background(outfile,
                                                        q_checksum, q_serializer)
+            serializer_task = my_thread_type(target=serializer,
+                                           args=(q_serializer, ncpus,
+                                                 stream.outfile))
+            serializer_task.start()
 
         total_dirs = 0
         total_files = 0
