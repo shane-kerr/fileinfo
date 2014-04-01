@@ -254,7 +254,7 @@ class InfoTests(unittest.TestCase):
         prev_stat = info.output(out, err, prev_stat_val)
         # confirm that all of our values are as expected
         self.assertEqual(stat_val, prev_stat)
-        self.assertEqual(out.getvalue(), "i42\n>foo\n")
+        self.assertEqual(out.getvalue(), "i42\n@foo\n")
         self.assertEqual(err.getvalue(), "")
 
     def test_file_info(self):
@@ -406,14 +406,14 @@ class TaskTests(unittest.TestCase):
         q = Queue.Queue()
         q.put(None)
         out = StringIO()
-        fileinfo.serializer(q, 1, out)
+        fileinfo.serializer(q, 1, fileinfo.WriterWithSize(out))
         self.assertEqual(out.getvalue(), '')
         # try a single entry
         q = Queue.Queue()
         q.put((0, self.mock_info("single")))
         q.put(None)
         out = StringIO()
-        fileinfo.serializer(q, 1, out)
+        fileinfo.serializer(q, 1, fileinfo.WriterWithSize(out))
         self.assertEqual(out.getvalue(), 'single\n')
         # now try several entries
         q = Queue.Queue()
@@ -424,7 +424,7 @@ class TaskTests(unittest.TestCase):
         q.put((4, self.mock_info("e")))
         q.put(None)
         out = StringIO()
-        fileinfo.serializer(q, 1, out)
+        fileinfo.serializer(q, 1, fileinfo.WriterWithSize(out))
         self.assertEqual(out.getvalue(), 'a\nb\nc\nd\ne\n')
         # now try several entries, out of order
         q = Queue.Queue()
@@ -435,7 +435,7 @@ class TaskTests(unittest.TestCase):
         q.put((1, self.mock_info("b")))
         q.put(None)
         out = StringIO()
-        fileinfo.serializer(q, 1, out)
+        fileinfo.serializer(q, 1, fileinfo.WriterWithSize(out))
         self.assertEqual(out.getvalue(), 'a\nb\nc\nd\ne\n')
         # finally, simulate our complete system by having multiple generators
         q = Queue.Queue()
@@ -449,7 +449,7 @@ class TaskTests(unittest.TestCase):
         q.put(None)
         q.put(None)
         out = StringIO()
-        fileinfo.serializer(q, 4, out)
+        fileinfo.serializer(q, 4, fileinfo.WriterWithSize(out))
         self.assertEqual(out.getvalue(), 'a\nb\nc\nd\ne\n')
 
     def test_get_checksum(self):
@@ -533,10 +533,11 @@ class OutputStreamTests(unittest.TestCase):
     def test_base(self):
         outfile = StringIO()
         stream = fileinfo.file_info_output_stream_base(outfile)
-        self.assertEqual(stream.outfile, outfile)
+        self.assertEqual(stream.outfile.f, outfile)
         self.assertEqual(stream.inode_cache, { })
         self.assertEqual(stream.prev_stat, None)
-        self.assertEqual(outfile.getvalue(), '')
+        self.assertEqual(outfile.getvalue(),
+                         '%fileinfo ' + fileinfo.FILEINFO_VERSION + '\n')
     def test_base_noops(self):
         # confirm that we have operations which don't do anything 
         outfile = StringIO()
@@ -545,12 +546,13 @@ class OutputStreamTests(unittest.TestCase):
         stream._process_inode(None)
         stream._process_checksum_file(None)
         stream._process_non_checksum_file(None)
-        self.assertEqual(outfile.getvalue(), '')
+        self.assertEqual(outfile.getvalue(),
+                         '%fileinfo ' + fileinfo.FILEINFO_VERSION + '\n')
     def test_base_output(self):
         # confirm that our actual output functions work
         class testclass(fileinfo.file_info_output_stream_base):
             def __init__(self):
-                super(testclass, self).__init__(None)
+                super(testclass, self).__init__(StringIO())
                 self.calls = [ ]
             def _process_dir(self, chdir_obj):
                 self.calls.append(("_process_dir", chdir_obj.dir_name))

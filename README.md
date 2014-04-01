@@ -44,7 +44,7 @@ information associated with that.
 
 Files start with a line indicating the version:
 
-    %fileinfo 0.3
+    %fileinfo 0.4
 
 A change of directory may be indicated by either a '!' (exclamation
 point) or a ':' (colon). An exclamation point indicates a directory on
@@ -81,7 +81,11 @@ The file information is:
     C - time of last status change
     A - time of last access
     # - SHA224 hash of the file, base64-encoded (regular files only)
+
+When all meta information for a file is complete, we have either:
+
     > - the name of the file, possible escaped (see below)
+    @ - the name of the cached inode file, possible escaped (see below)
 
 A way to minimize redundant information is by observing that most
 files in a directory are owned by the same user, so for example the
@@ -126,7 +130,11 @@ value is omitted for that particular file.
 Finally, an "inode cache" is used. For files that have already had
 information output in the form of an inode, only the inode number and
 the name of the file is output - the other details are identical to
-the previous time the file was output.
+the previous time the file was output. We only care about the fact
+that the file exists with the correct name and inode, since all other
+details are identical based on the inode. We use the at-sign, @, to
+let the checker know that this is a such a cached file, so that it
+only checks that information.
 
 Performance
 ----

@@ -12,7 +12,7 @@ information associated with that.
 
 Files start with a line indicating the version:
 
-    %fileinfo 0.3
+    %fileinfo 0.4
 
 A change of directory may be indicated by either a '!' (exclamation
 point) or a ':' (colon). An exclamation point indicates a directory on
@@ -49,7 +49,11 @@ The file information is:
     C - time of last status change
     A - time of last access
     # - SHA224 hash of the file, base64-encoded (regular files only)
+
+When all meta information for a file is complete, we have either:
+
     > - the name of the file, possible escaped (see below)
+    @ - the name of the cached inode file, possible escaped (see below)
 
 A way to minimize redundant information is by observing that most
 files in a directory are owned by the same user, so for example the
@@ -94,7 +98,11 @@ value is omitted for that particular file.
 Finally, an "inode cache" is used. For files that have already had
 information output in the form of an inode, only the inode number and
 the name of the file is output - the other details are identical to
-the previous time the file was output.
+the previous time the file was output. We only care about the fact
+that the file exists with the correct name and inode, since all other
+details are identical based on the inode. We use the at-sign, @, to
+let the checker know that this is a such a cached file, so that it
+only checks that information.
 """
 
 # Experiment 1: output binary rather than text values
@@ -242,7 +250,7 @@ except ImportError:
 # aid when checking meta-file from older versions, that is to say 
 # provide backwards compatability. Forwards compatability is not 
 # attempted - upgrade your checker.
-FILEINFO_VERSION="0.3"
+FILEINFO_VERSION="0.4"
 
 def escape_filename(filename):
     r'''Escape a file name so it can be used in a text file.
@@ -524,7 +532,7 @@ class cached_info:
         :param prev_stat: the last stat object output (NOT USED)
         """
         out.write("i%d\n" % self.stat.st_ino)
-        out.write(">" + escape_filename(self.file_name) + "\n")
+        out.write("@" + escape_filename(self.file_name) + "\n")
         return self.stat
 
 class file_info:
@@ -638,7 +646,7 @@ def serializer(q_serializer, num_checksum, outfile):
     :param q_serializer: a Queue (Queue.Queue for threads,
                          multiprocessing.Queue for multiple processes)
     :param num_checksum: the total number of checksum tasks running (at least 1)
-    :param outfile: the file to write output to
+    :param outfile: a WriterWithSize for the file to write output to
 
     This is expected to be run as a thread / multiprocess.
 
@@ -692,10 +700,7 @@ def serializer(q_serializer, num_checksum, outfile):
     outfile.flush()
 
     # send the size of data if we recorded it
-    if hasattr(outfile, 'size'):
-        q_serializer.put(outfile.size)
-    else:
-        q_serializer.put(-1)
+    q_serializer.put(outfile.size)
 
 def get_checksum(chksum_file):
     """calculate a SHA224 hash as a checksum for the given file_info object
@@ -752,6 +757,17 @@ def checksum_generator(q_in, q_out):
         (number, chksum_file) = info
         q_out.put((number, get_checksum(chksum_file)))
 
+# XXX: document, test
+class WriterWithSize:
+    def __init__(self, f):
+        self.f = f
+        self.size = 0
+    def write(self, data):
+        self.f.write(data)
+        self.size += len(data)
+    def flush(self):
+        self.f.flush()
+
 # In order to support both single-core and multi-core operation, we
 # use a class which hides the details of file information output.
 #
@@ -777,9 +793,15 @@ class file_info_output_stream_base(object):
 
         :param outfile: a file descriptor to write to
         """
-        self.outfile = outfile
+        self.outfile = WriterWithSize(outfile)
         self.inode_cache = { }
         self.prev_stat = None
+        if stat_has_time_ns():
+            outfile.write('%%fileinfo %s+n\n' % FILEINFO_VERSION)
+        else:
+            outfile.write('%%fileinfo %s\n' % FILEINFO_VERSION)
+        outfile.flush()
+
     def _process_dir(self, chdir_obj):
         """method called when we want to output directory information
 
@@ -898,6 +920,39 @@ class file_info_output_stream_background(file_info_output_stream_base):
         self.q_serializer.put((self.number, file_obj))
         self.number = self.number + 1
 
+class file_info_input_stream_EXCEPTION(Exception):
+    pass
+
+class file_info_input_stream_BADVERSION(file_info_input_stream_EXCEPTION):
+    pass
+
+class file_info_input_stream:
+    def __init__(self, instream):
+        self.instream = instream
+        s = self.instream.readline()
+        version_str = '%%fileinfo %s' % FILEINFO_VERSION
+        if not s.startswith(version_str):
+            raise file_info_input_stream_BADVERSION()
+        s = s[len(version_str):]
+        if s.startswith("+n"):
+            self.nano = True
+        else:
+            self.nano = False
+    def read_next(self):
+        while True:
+            # TODO: unescaping stuff
+            s = self.instream.readline()
+            if s == '':
+                return None
+            if s[0] == '!':
+                return ('dir', s[1:-1])
+            if s[0] == ':':
+                return ('msdos_dir', s[1:-1])
+            if s[0] == '@':
+                return ('inode', s[1:-1])
+            if s[0] == '>':
+                return ('file', s[1:-1])
+
 def human_time(seconds):
     sub_seconds = seconds - int(seconds)
     seconds = int(seconds)
@@ -960,16 +1015,6 @@ def pl_file(n):
         return "file"
     else:
         return "files"
-
-class record_output_size:
-    def __init__(self, f):
-        self.f = f
-        self.size = 0
-    def write(self, data):
-        self.f.write(data)
-        self.size += len(data)
-    def flush(self):
-        self.f.flush()
 
 class progress_output:
     def __init__(self, num_dir, num_file, progress_interval, start_time=None):
@@ -1035,25 +1080,38 @@ def main():
     signal.signal(signal.SIGINT, signal.SIG_DFL)
 
     if use_threads:
+        # could possibly develop specialized processor-counting code, for
+        # example looking at /proc/cpuinfo or other OS-specific methods,
+        # but we'll just default to 1 core for now
         ncpus = 1
+        can_count_cpus = False
     else:
         ncpus = multiprocessing.cpu_count()
+        can_count_cpus = True
 
-    parser = argparse.ArgumentParser(description='Output file information.')
-    # XXX: make sure it is positive
+    parser = argparse.ArgumentParser(description='Output file information, or check files information.')
+    if can_count_cpus:
+        help='(defaults to number of cores, which is %d on this system)' % ncpus
+    else:
+        help='(defaults to 1, since we cannot count CPUs on this system)'
     parser.add_argument('-n', '--ncpus', type=int,
-                        help='number of cores to use (defaults to number of cores, which is %d on this system)' % ncpus)
-    parser.add_argument('-o', '--outfile', type=str,
-                        help='file to write to (defaults to STDOUT)')
+                        help='number of cores to use ' + help)
     parser.add_argument('-p', '--progress', action="store_true",
-                        help='output progress as information is recorded')
+                        help='output updates as processing occurs')
     parser.add_argument('-s', '--summary', action="store_true",
                         help='output summary information when complete')
+    parser.add_argument('-o', '--outfile', type=str,
+                        help='file to write to (defaults to STDOUT)')
+    parser.add_argument('-c', "--check", action="store_true",
+                        help='check files against information in a file')
+    parser.add_argument('-i', "--infile", type=str,
+                        help='file to read from if checking (defaults to STDIN)')
     parser.add_argument('directory', nargs="*",
                         help='where to report file information from (reports current directory if none specified)')
     args = parser.parse_args()
 
-    # XXX: check for ncpus of 0?
+    # note that we explicitly ignore a CPU count of 0, and leave the
+    # count at the default
     if args.ncpus:
         ncpus = args.ncpus
 
@@ -1062,35 +1120,15 @@ def main():
     else:
         outfile = sys.stdout
 
-    if args.summary:
-        outfile = record_output_size(outfile)
-
-    if stat_has_time_ns():
-        outfile.write('%%fileinfo %s+n\n' % FILEINFO_VERSION)
+    if args.infile:
+        infile = open(args.infile, 'r')
     else:
-        outfile.write('%%fileinfo %s\n' % FILEINFO_VERSION)
-    outfile.flush()
+        infile = sys.stdin
 
     if args.directory:
         fileinfo_dirs = args.directory
     else:
         fileinfo_dirs = [ '.' ]
-
-    if args.progress:
-        total_dirs = 0
-        total_files = 0
-        sys.stderr.write("Collecting file counts...")
-        for fileinfo_dir in fileinfo_dirs:
-            for root, dirs, files in os.walk(fileinfo_dir):
-                for name in dirs:
-                    total_dirs = total_dirs + 1
-                for name in files:
-                    total_files = total_files + 1
-                sys.stderr.write("\rCollecting file counts... %d %s in %d %s" %
-                    (total_files, pl_file(total_files), 
-                     total_dirs, pl_dir(total_dirs)))
-        sys.stderr.write("\n")
-        progress = progress_output(total_dirs, total_files, 0.1)
 
     # if we are threading, we use the Queue and threading modules,
     # otherwise the multiprocessing module
@@ -1101,68 +1139,88 @@ def main():
         my_queue_type = multiprocessing.Queue
         my_thread_type = multiprocessing.Process
 
-    # create processing units
-    if ncpus == 1:
-        stream = file_info_output_stream_immediate(outfile)
+    if args.check:
+        stream = file_info_input_stream(infile)
+        while True:
+            info = stream.read_next()
+            if info is None:
+                break
     else:
-        # XXX: how big should this queue be?
-        q_checksum = my_queue_type(ncpus * 4)
-        q_serializer = my_queue_type()
-        serializer_task = my_thread_type(target=serializer,
+        if args.progress:
+            total_dirs = 0
+            total_files = 0
+            sys.stderr.write("Collecting file counts...")
+            for fileinfo_dir in fileinfo_dirs:
+                for root, dirs, files in os.walk(fileinfo_dir):
+                    for name in dirs:
+                        total_dirs = total_dirs + 1
+                    for name in files:
+                        total_files = total_files + 1
+                    sys.stderr.write("\rCollecting file counts... %d %s in %d %s" %
+                        (total_files, pl_file(total_files),
+                         total_dirs, pl_dir(total_dirs)))
+            sys.stderr.write("\n")
+            progress = progress_output(total_dirs, total_files, 0.1)
+
+        # create processing units
+        if ncpus == 1:
+            stream = file_info_output_stream_immediate(outfile)
+        else:
+            # XXX: how big should this queue be?
+            q_checksum = my_queue_type(ncpus * 4)
+            q_serializer = my_queue_type()
+            serializer_task = my_thread_type(target=serializer,
                                            args=(q_serializer, ncpus, outfile))
-        serializer_task.start()
-        for n in range(ncpus):
-            my_thread_type(target=checksum_generator,
-                                    args=(q_checksum, q_serializer)).start()
-        stream = file_info_output_stream_background(outfile,
-                                                    q_checksum, q_serializer)
+            serializer_task.start()
+            for n in range(ncpus):
+                my_thread_type(target=checksum_generator,
+                                        args=(q_checksum, q_serializer)).start()
+            stream = file_info_output_stream_background(outfile,
+                                                       q_checksum, q_serializer)
 
-    total_dirs = 0
-    total_files = 0
-    total_bytes_read = 0
-    for fileinfo_dir in fileinfo_dirs:
-        # In Python 2, if we invoke os.walk() with a Unicode string
-        # we'll get Unicode file names, so we need to insure that 
-        # our directory names are Unicode.
-        # Python 3 of course always returns Unicode names.
-        fileinfo_dir = make_type_unicode(fileinfo_dir)
+        total_dirs = 0
+        total_files = 0
+        total_bytes_read = 0
+        for fileinfo_dir in fileinfo_dirs:
+            # In Python 2, if we invoke os.walk() with a Unicode string
+            # we'll get Unicode file names, so we need to insure that
+            # our directory names are Unicode.
+            # Python 3 of course always returns Unicode names.
+            fileinfo_dir = make_type_unicode(fileinfo_dir)
 
-        for root, dirs, files in os.walk(fileinfo_dir):
-            # XXX: we can skip output for empty directories
-            stream.output_dir(root)
-            if args.progress:
-                progress.update(1, 0)
-            # do dirs first then files to give us some pipelining...
-            # might be nice to have some sort algorithm that outputs
-            # as it goes... so the remaining processing can start
-            # while the sort completes... hm...
-            dirs.sort()
-            for name in dirs:
-                stream.output_file(root, name)
+            for root, dirs, files in os.walk(fileinfo_dir):
+                # XXX: we can skip output for empty directories
+                stream.output_dir(root)
                 if args.progress:
-                    progress.update(0, 1)
-            files.sort()
-            for name in files:
-                stream.output_file(root, name)
-                if args.progress:
-                    progress.update(0, 1)
-            total_dirs = total_dirs + len(dirs)
-            total_files = total_files + len(files)
-            # XXX: gather total bytes
-#            if stat.S_ISREG(s.st_mode):
-#                total_bytes_read = total_bytes_read + s.st_size
+                    progress.update(1, 0)
+                # do dirs first then files to give us some pipelining...
+                # might be nice to have some sort algorithm that outputs
+                # as it goes... so the remaining processing can start
+                # while the sort completes... hm...
+                dirs.sort()
+                for name in dirs:
+                    stream.output_file(root, name)
+                    if args.progress:
+                        progress.update(0, 1)
+                files.sort()
+                for name in files:
+                    stream.output_file(root, name)
+                    if args.progress:
+                        progress.update(0, 1)
+                total_dirs = total_dirs + len(dirs)
+                total_files = total_files + len(files)
 
-    # finish processing and wait for completion
-    if ncpus > 1:
-        for n in range(ncpus):
-            q_checksum.put(None)
-        serializer_task.join()
-        bytes_written = q_serializer.get()
-    else:
-        bytes_written = outfile.size
+        # finish processing and wait for completion
+        if ncpus > 1:
+            for n in range(ncpus):
+                q_checksum.put(None)
+            serializer_task.join()
+            bytes_written = q_serializer.get()
+        else:
+            bytes_written = outfile.size
 
-    if args.progress:
-        progress.complete()
+        if args.progress:
+            progress.complete()
 
     if args.summary:
         sys.stderr.write("Number of directories: %8d\n" % total_dirs)
