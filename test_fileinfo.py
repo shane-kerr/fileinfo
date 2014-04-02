@@ -528,6 +528,38 @@ class TaskTests(unittest.TestCase):
         self.assertEqual(q_out.get_nowait(), None)
         self.assertTrue(q_out.empty())
 
+# test the mini WriterWithSize class
+class WriterWithSizeTests(unittest.TestCase):
+    def test_writer(self):
+        temp_file = tempfile.NamedTemporaryFile()
+        writer = fileinfo.WriterWithSize(temp_file)
+
+        # check that we start at zero
+        self.assertEqual(0, writer.size)
+        file_stats = os.lstat(temp_file.name)
+        self.assertEqual(0, file_stats.st_size)
+
+        # write a character, check our length
+        writer.write(b'X')
+        writer.flush()
+        self.assertEqual(1, writer.size)
+        file_stats = os.lstat(temp_file.name)
+        self.assertEqual(1, file_stats.st_size)
+
+        # write a few more characters, check our length
+        writer.write(b'z' * 514)
+        writer.flush()
+        self.assertEqual(515, writer.size)
+        file_stats = os.lstat(temp_file.name)
+        self.assertEqual(515, file_stats.st_size)
+
+        # try some unicode... see what happens...
+        writer.write(u'\u03c0'.encode('utf-8'))
+        writer.flush()
+        self.assertEqual(517, writer.size)
+        file_stats = os.lstat(temp_file.name)
+        self.assertEqual(517, file_stats.st_size)
+
 # test the output stream objects
 class OutputStreamTests(unittest.TestCase):
     def test_base(self):

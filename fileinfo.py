@@ -757,15 +757,32 @@ def checksum_generator(q_in, q_out):
         (number, chksum_file) = info
         q_out.put((number, get_checksum(chksum_file)))
 
-# XXX: document, test
 class WriterWithSize:
+    """Wraps a file-like object, providing write() and flush() functions.
+    Keeps a counter of the number of characters written, accessible via
+    the "size" member variable.
+
+    Note that if the underlying object is binary, write() expects bytes(),
+    and if it is text, write() expects str(). If a text file is used, then
+    the "size" parameter is a count of characters, not bytes."""
     def __init__(self, f):
+        """create the WriterWithSize
+
+        :param f: a file-like object
+
+        f need only implement the write() and flush() functions.
+        """
         self.f = f
         self.size = 0
     def write(self, data):
+        """write the given string to the file-like object
+
+        :param data: a string
+        """
         self.f.write(data)
         self.size += len(data)
     def flush(self):
+        """flush the underlying file-like object"""
         self.f.flush()
 
 # In order to support both single-core and multi-core operation, we
