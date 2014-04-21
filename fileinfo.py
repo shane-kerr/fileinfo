@@ -344,7 +344,7 @@ def nsec_ftime_value(f):
     # Since we got 6 digits, that means that we have microseconds and 
     # need to multiply by 1000 to get the equivalent number of nanoseconds:
     #    857048.0 -> 857048000
-    return int(usec * 1000)
+    return int(usec) * 1000
 
 def file_time_details(st):
     """Returns ISO 8601-formatted versions of atime, ctime, and mtime
@@ -814,10 +814,10 @@ class file_info_output_stream_base(object):
         self.inode_cache = { }
         self.prev_stat = None
         if stat_has_time_ns():
-            outfile.write('%%fileinfo %s+n\n' % FILEINFO_VERSION)
+            self.outfile.write('%%fileinfo %s+n\n' % FILEINFO_VERSION)
         else:
-            outfile.write('%%fileinfo %s\n' % FILEINFO_VERSION)
-        outfile.flush()
+            self.outfile.write('%%fileinfo %s\n' % FILEINFO_VERSION)
+        self.outfile.flush()
 
     def _process_dir(self, chdir_obj):
         """method called when we want to output directory information
@@ -1021,17 +1021,27 @@ def human_bytes(b):
         b10 = "%d B"
     return "%s / %s" % (b2, b10)
 
-def pl_dir(n):
+plural_of = {
+    "directory": "directories",
+    "file": "files",
+}
+def plural(n, word):
     if n == 1:
-        return "directory"
+        return word
     else:
-        return "directories"
+        return plural_of[word]
 
-def pl_file(n):
-    if n == 1:
-        return "file"
-    else:
-        return "files"
+#def pl_dir(n):
+#    if n == 1:
+#        return "directory"
+#    else:
+#        return "directories"
+#
+#def pl_file(n):
+#    if n == 1:
+#        return "file"
+#    else:
+#        return "files"
 
 class progress_output:
     def __init__(self, num_dir, num_file, progress_interval, start_time=None):
@@ -1053,8 +1063,8 @@ class progress_output:
         else:
             progress = ""
         sys.stderr.write("\r%d %s from %d %s in %s%s" %
-            (self.file_count, pl_file(self.file_count), 
-            self.dir_count, pl_dir(self.dir_count),
+            (self.file_count, plural(self.file_count, "file"), 
+            self.dir_count, plural(self.dir_count, "directory"),
             human_time(run_time), progress))
     def update(self, dir_inc, file_inc, current_time=None):
         self.dir_count = self.dir_count + dir_inc
@@ -1174,8 +1184,8 @@ def main():
                     for name in files:
                         total_files = total_files + 1
                     sys.stderr.write("\rCollecting file counts... %d %s in %d %s" %
-                        (total_files, pl_file(total_files),
-                         total_dirs, pl_dir(total_dirs)))
+                        (total_files, plural(total_files, "file"),
+                         total_dirs, plural(total_dirs, "dir")))
             sys.stderr.write("\n")
             progress = progress_output(total_dirs, total_files, 0.1)
 
@@ -1235,7 +1245,8 @@ def main():
             serializer_task.join()
             bytes_written = q_serializer.get()
         else:
-            bytes_written = outfile.size
+#            bytes_written = outfile.size
+            bytes_written = stream.outfile.size
 
         if args.progress:
             progress.complete()
