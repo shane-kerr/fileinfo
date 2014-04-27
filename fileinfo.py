@@ -938,37 +938,81 @@ class file_info_output_stream_background(file_info_output_stream_base):
         self.number = self.number + 1
 
 class file_info_input_stream_EXCEPTION(Exception):
+    """file_info_input_stream_EXCEPTION is a base for all exceptions that can occur when reading a meta-information file
+    """
+    pass
+
+class file_info_input_stream_NOTFILEINFO(file_info_input_stream_EXCEPTION):
+    """file_info_input_stream_NOTFILEINFO is raised when the stream doesn't look like it has file info
+    """
     pass
 
 class file_info_input_stream_BADVERSION(file_info_input_stream_EXCEPTION):
+    """file_info_input_stream_BADVERSION is raised when the version string is not expected
+    """
     pass
 
+class file_info_input_stream_NO_START_DIR(file_info_input_stream_EXCEPTION):
+    """file_info_input_stream_NO_START_DIR is raised when a input stream does not start with a directory
+    """
+    pass
+
+class file_info_input_stream_SYNTAX_ERROR(file_info_input_stream_EXCEPTION):
+    """file_info_input_stream_SYNTAX_ERROR is raised if we discover something unexpected while parsing a file
+    """
+    def __init__(self, line_num):
+        self.line_num = line_num
+
 class file_info_input_stream:
+    """file_info_input_stream reads the file meta-information and provides a stream of information based on that, which
+    can be checked against the actual state of files.
+    """
     def __init__(self, instream):
         self.instream = instream
+        self.line_num = 1
         s = self.instream.readline()
-        version_str = '%%fileinfo %s' % FILEINFO_VERSION
-        if not s.startswith(version_str):
+        magic = "%fileinfo "
+        if not s.startswith(magic):
+            raise file_info_input_stream_NOTFILEINFO()
+        s = s[len(magic):]
+        if not s.startswith(FILEINFO_VERSION):
             raise file_info_input_stream_BADVERSION()
-        s = s[len(version_str):]
+        s = s[len(FILEINFO_VERSION):]
         if s.startswith("+n"):
             self.nano = True
+            s = s[len("+n"):]
         else:
             self.nano = False
+        if s != "\n":
+            raise file_info_input_stream_BADVERSION()
+        self.have_read_dir = False
+
     def read_next(self):
         while True:
             # TODO: unescaping stuff
             s = self.instream.readline()
+            self.line_num = self.line_num + 1
             if s == '':
-                return None
+                answer = None
+                break
             if s[0] == '!':
-                return ('dir', s[1:-1])
+                self.have_read_dir = True
+                answer = ('dir', s[1:-1])
+                break
             if s[0] == ':':
-                return ('msdos_dir', s[1:-1])
+                self.have_read_dir = True
+                answer = ('msdos_dir', s[1:-1])
+                break
             if s[0] == '@':
-                return ('inode', s[1:-1])
+                answer = ('inode', s[1:-1])
+                break
             if s[0] == '>':
-                return ('file', s[1:-1])
+                answer = ('file', s[1:-1])
+                break
+            raise file_info_input_stream_SYNTAX_ERROR(self.line_num)
+        if not self.have_read_dir:
+            raise file_info_input_stream_NO_START_DIR()
+        return answer
 
 def human_time(seconds):
     sub_seconds = seconds - int(seconds)
@@ -1030,18 +1074,6 @@ def plural(n, word):
         return word
     else:
         return plural_of[word]
-
-#def pl_dir(n):
-#    if n == 1:
-#        return "directory"
-#    else:
-#        return "directories"
-#
-#def pl_file(n):
-#    if n == 1:
-#        return "file"
-#    else:
-#        return "files"
 
 class progress_output:
     def __init__(self, num_dir, num_file, progress_interval, start_time=None):
@@ -1245,7 +1277,6 @@ def main():
             serializer_task.join()
             bytes_written = q_serializer.get()
         else:
-#            bytes_written = outfile.size
             bytes_written = stream.outfile.size
 
         if args.progress:

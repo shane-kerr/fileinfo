@@ -636,5 +636,34 @@ class OutputStreamTests(unittest.TestCase):
             os.remove(special_full_path)
             os.rmdir(tempdir)
 
+# test the output stream objects
+class InputStreamTests(unittest.TestCase):
+    def test_base(self):
+        # basic file syntax check
+        good_file = StringIO('%%fileinfo %s\n' % fileinfo.FILEINFO_VERSION)
+        input_stream = fileinfo.file_info_input_stream(good_file)
+        self.assertIs(input_stream.instream, good_file)
+        self.assertFalse(input_stream.nano)
+        # basic file syntax check, with nanoseconds
+        good_file = StringIO('%%fileinfo %s+n\n' % fileinfo.FILEINFO_VERSION)
+        input_stream = fileinfo.file_info_input_stream(good_file)
+        self.assertIs(input_stream.instream, good_file)
+        self.assertTrue(input_stream.nano)
+        # check a bad magic identifier
+        bad_magic = StringIO("xxx")
+        self.assertRaises(fileinfo.file_info_input_stream_NOTFILEINFO, fileinfo.file_info_input_stream, bad_magic)
+        # now check a bad version
+        bad_file = StringIO('%%fileinfo %s+n\n' % (fileinfo.FILEINFO_VERSION + ".1"))
+        self.assertRaises(fileinfo.file_info_input_stream_BADVERSION, fileinfo.file_info_input_stream, bad_file)
+        # and make sure we look for the end-of-line
+        no_eol = StringIO('%%fileinfo %s+n' % fileinfo.FILEINFO_VERSION)
+        self.assertRaises(fileinfo.file_info_input_stream_BADVERSION, fileinfo.file_info_input_stream, no_eol)
+    def test_dir(self):
+        # see what happens if we don't start with a directory
+        nodir_file = StringIO("""%%fileinfo %s\n>filename\n""" % fileinfo.FILEINFO_VERSION)
+        input_stream = fileinfo.file_info_input_stream(nodir_file)
+        self.assertRaises(fileinfo.file_info_input_stream_NO_START_DIR, input_stream.read_next)
+        # how can we check the contentsof the assertion (get line number, description)
+
 if __name__ == '__main__':
     unittest.main()
