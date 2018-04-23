@@ -1067,6 +1067,7 @@ def human_bytes(b):
 
 plural_of = {
     "directory": "directories",
+    "dir": "dirs",
     "file": "files",
 }
 def plural(n, word):
