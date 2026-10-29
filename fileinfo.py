@@ -579,11 +579,11 @@ class file_info:
         if self.hashing_error:
             if hasattr(self.hashing_error, 'errno') and \
                hasattr(self.hashing_error, 'strerror'):
-                err.write("Error with '" + self.file_name + "': [" + 
+                err.write("\nError with '" + self.file_name + "': [" +
                           errno.errorcode[self.hashing_error.errno] + "] " +
                           self.hashing_error.strerror + "\n")
             else:
-                err.write("Error with '" + self.file_name + "': " + 
+                err.write("\nError with '" + self.file_name + "': " +
                           str(self.hashing_error) + "\n")
 
         # most metadata is output if it is different from that
@@ -1102,7 +1102,7 @@ class progress_output:
                 (self.file_count / run_time))
         else:
             progress = ""
-        sys.stderr.write("\r%d %s from %d %s in %s%s" %
+        sys.stderr.write("\r%d %s from %d %s in %s%s    \b\b\b\b" %
             (self.file_count, plural(self.file_count, "file"), 
             self.dir_count, plural(self.dir_count, "directory"),
             human_time(run_time), progress))
@@ -1255,7 +1255,6 @@ def main():
             fileinfo_dir = make_type_unicode(fileinfo_dir)
 
             for root, dirs, files in os.walk(fileinfo_dir):
-                # XXX: we can skip output for empty directories
                 stream.output_dir(root)
                 # do dirs first then files to give us some pipelining...
                 # might be nice to have some sort algorithm that outputs
