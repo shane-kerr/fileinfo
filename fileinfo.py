@@ -713,6 +713,7 @@ def get_checksum(chksum_file):
     """
     try:
         h = hashlib.sha224()
+
         # open with O_NOATIME so calculating checksum doesn't
         # modify the file metadata
         try:
@@ -725,9 +726,15 @@ def get_checksum(chksum_file):
             # that and try again without that flag
             if e.errno != errno.EPERM: raise
             fd = os.open(chksum_file.full_path, os.O_RDONLY)
+
+        st_blksize = getattr(chksum_file.stat, 'st_blksize', 8192)
+        if st_blksize < 65536:
+            bufsize = 65536
+        else:
+            bufsize = st_blksize
         f = os.fdopen(fd, 'rb')
         while True:
-            s = f.read(getattr(chksum_file.stat, 'st_blksize', 8192))
+            s = f.read(bufsize)
             if len(s) == 0: break
             h.update(s)
         f.close()
