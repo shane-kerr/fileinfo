@@ -635,6 +635,11 @@ class file_info:
         # only regular files have a hash
         if self.encoded_hash is not None:
             out.write("#" + self.encoded_hash + "\n")
+        # If we had a hashing error record it here by outputing an invalid
+        # hash; that is necessary to compare file infos, where one succeeded
+        # and the failed.
+        elif self.hashing_error:
+            out.write("#-")
 
         # finally, write out the file name itself
         out.write(">" + escape_filename(self.file_name) + "\n")
