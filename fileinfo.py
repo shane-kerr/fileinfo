@@ -1098,7 +1098,7 @@ class progress_output:
         run_time = current_time - self.start_time
         if (self.total_count != 0) and (run_time > 0):
             progress = " (%.1f%% done, %.1f/second)" % (
-                (self.file_count * 100) / self.total_count,
+                (self.file_count * 100) / self.total_file_count,
                 (self.file_count / run_time))
         else:
             progress = ""
@@ -1219,13 +1219,11 @@ def main():
             sys.stderr.write("Collecting file counts...")
             for fileinfo_dir in fileinfo_dirs:
                 for root, dirs, files in os.walk(fileinfo_dir):
-                    for name in dirs:
-                        total_dirs = total_dirs + 1
-                    for name in files:
-                        total_files = total_files + 1
+                    total_dirs += len(dirs)
+                    total_files += len(files)
                     sys.stderr.write("\rCollecting file counts... %d %s in %d %s" %
                         (total_files, plural(total_files, "file"),
-                         total_dirs, plural(total_dirs, "dir")))
+                         total_dirs, plural(total_dirs, "directory")))
             sys.stderr.write("\n")
             progress = progress_output(total_dirs, total_files, 0.1)
 
@@ -1259,8 +1257,6 @@ def main():
             for root, dirs, files in os.walk(fileinfo_dir):
                 # XXX: we can skip output for empty directories
                 stream.output_dir(root)
-                if args.progress:
-                    progress.update(1, 0)
                 # do dirs first then files to give us some pipelining...
                 # might be nice to have some sort algorithm that outputs
                 # as it goes... so the remaining processing can start
@@ -1269,7 +1265,7 @@ def main():
                 for name in dirs:
                     stream.output_file(root, name)
                     if args.progress:
-                        progress.update(0, 1)
+                        progress.update(1, 0)
                 files.sort()
                 for name in files:
                     stream.output_file(root, name)
