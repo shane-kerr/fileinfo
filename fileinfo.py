@@ -204,7 +204,7 @@ try:
     use_threads = False
 except ImportError:
     # Jython has no multiprocessing module, so we must use threads
-    import Queue
+    import Queue as queue
     import threading
     use_threads = True
 
@@ -643,7 +643,7 @@ class file_info:
 def serializer(q_serializer, num_checksum, outfile):
     """insure results from all threads/processes get output in the correct order
 
-    :param q_serializer: a Queue (Queue.Queue for threads,
+    :param q_serializer: a Queue (queue.Queue for threads,
                          multiprocessing.Queue for multiple processes)
     :param num_checksum: the total number of checksum tasks running (at least 1)
     :param outfile: a WriterWithSize for the file to write output to
@@ -739,9 +739,9 @@ def get_checksum(chksum_file):
 def checksum_generator(q_in, q_out):
     """generate checksums for files
 
-    :param q_in: a Queue (Queue.Queue for threads,
+    :param q_in: a Queue (queue.Queue for threads,
                           multiprocessing.Queue for multiple processes)
-    :param q_out: a Queue (Queue.Queue for threads,
+    :param q_out: a Queue (queue.Queue for threads,
                            multiprocessing.Queue for multiple processes)
 
     Collects info objects from the q_in queue, calculates the checksum
@@ -1193,7 +1193,7 @@ def main():
     # if we are threading, we use the Queue and threading modules,
     # otherwise the multiprocessing module
     if use_threads:
-        my_queue_type = Queue.Queue
+        my_queue_type = queue.Queue
         my_thread_type = threading.Thread
     else:
         my_queue_type = multiprocessing.Queue
